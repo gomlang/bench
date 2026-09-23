@@ -128,10 +128,10 @@ compatibility with Rust's `std::hint::black_box`.
 ## Validation and example
 
 ```sh
-../../stage2/bin/goml fmt --check
-../../stage2/bin/goml check
-../../stage2/bin/goml test
-GOFLAGS=-race ../../stage2/bin/goml test --target-dir _artifact/race
+../../goml-dev/stage2/bin/goml fmt --check
+../../goml-dev/stage2/bin/goml check
+../../goml-dev/stage2/bin/goml test
+GOFLAGS=-race ../../goml-dev/stage2/bin/goml test --target-dir _artifact/race
 ```
 
 Native tests use fixed statistical data and injected clocks. They cover warmup
@@ -140,7 +140,7 @@ work limits, backward/zero clocks, bootstrap replay, outlier retention, comparis
 categories, identity mismatches, JSON validation, HTML escaping and concurrent
 black-box correctness. Tests do not assert absolute machine performance.
 
-The independent `../consumers/bench` module imports version `0.1.0`, measures
+The independent `../../goml-dev/ecosystem/consumers/bench` module imports version `0.1.0`, measures
 insertion sort and standard sorting for 32/128-element inputs, and writes
 `_artifact/bench-report.json` and `.html`. Run `just ecosystem-test bench` from the
 repository root for the isolated registry consumer workflow.
