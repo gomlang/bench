@@ -12,7 +12,7 @@ agreement without imposing performance thresholds.
 baseline. The consumer test uses an injected clock to exercise cross-module
 setup closures and statistical/reporting APIs deterministically.
 
-Run `just ecosystem-test bench` from the repository root to construct the
+Run `(cd ../../verification && just ecosystem-test bench)` from this consumer directory to construct the
 isolated registry. Use the reported `GOML_HOME` for direct `goml check`, `goml test`
 or `goml run` commands here. The Go manifest resolves only the small local atomic
 adapter; benchmark/statistical source is resolved through the versioned GoML

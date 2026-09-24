@@ -140,9 +140,9 @@ work limits, backward/zero clocks, bootstrap replay, outlier retention, comparis
 categories, identity mismatches, JSON validation, HTML escaping and concurrent
 black-box correctness. Tests do not assert absolute machine performance.
 
-The independent `../../goml-dev/ecosystem/consumers/bench` module imports version `0.1.0`, measures
+The independent `consumer` module imports version `0.1.0`, measures
 insertion sort and standard sorting for 32/128-element inputs, and writes
-`_artifact/bench-report.json` and `.html`. Run `just ecosystem-test bench` from the
+`_artifact/bench-report.json` and `.html`. Run `(cd ../verification && just ecosystem-test bench)` from the
 repository root for the isolated registry consumer workflow.
 
 Design references: [Criterion analysis](https://bheisler.github.io/criterion.rs/book/analysis.html),
