@@ -1,5 +1,5 @@
 [module]
-path = "consumer::bench"
+path = "downstream::bench"
 
 [dependencies]
 "ecosystem::bench" = "0.1.0"

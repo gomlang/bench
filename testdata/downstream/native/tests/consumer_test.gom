@@ -1,6 +1,6 @@
 package tests;
 
-use consumer::bench as example;
+use downstream::bench as example;
 use ecosystem::bench;
 use std::testing;
 use std::context;

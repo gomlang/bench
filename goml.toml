@@ -1,2 +1,5 @@
 [module]
 path = "ecosystem::bench"
+
+[native]
+go-module = "example.com/goml-ecosystem/bench"
