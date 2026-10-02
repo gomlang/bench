@@ -1,0 +1,79 @@
+package bench;
+
+use std::context;
+
+fn summary_close(actual: f64, expected: f64) -> bool {
+    let difference = if actual > expected {
+        actual - expected
+    } else {
+        expected - actual
+    };
+    let scale = if actual > expected {
+        actual
+    } else {
+        expected
+    };
+    difference <= scale * 1e-12
+}
+
+fn summaries_agree(actual: Statistics, expected: Statistics) -> bool {
+    if actual.mild_outliers != expected.mild_outliers
+        || actual.severe_outliers != expected.severe_outliers {
+        return false
+    }
+    for (left, right) in[
+        (actual.mean.lower, expected.mean.lower),
+        (actual.mean.estimate, expected.mean.estimate),
+        (actual.mean.upper, expected.mean.upper),
+        (actual.median, expected.median),
+        (actual.min, expected.min),
+        (actual.max, expected.max),
+        (actual.standard_deviation, expected.standard_deviation),
+        (actual.median_absolute_deviation, expected.median_absolute_deviation),
+        (actual.slope_ns, expected.slope_ns),
+    ] {
+        if !summary_close(left, right) {
+            return false;
+        }
+    }
+    true
+}
+
+pub fn validate_report_strict_with(
+    report: SuiteReport,
+    max_bootstrap_draws: u64,
+    control: context::Context,
+) -> Result[(), Error] {
+    check_context(control)?;
+    validate_report(report)?;
+    if max_bootstrap_draws > 20000000 {
+        return Result::Err(
+            error(ErrorKind::Limit, "strict report bootstrap budget exceeds 20000000"),
+        )
+    }
+    let mut draws: u64 = 0;
+    for value in report.reports {
+        check_context(control)?;
+        let required = value.samples.len().to_u64() * value.options.bootstrap_resamples.to_u64();
+        if required > max_bootstrap_draws - draws {
+            return Result::Err(
+                error(ErrorKind::Limit, "strict report bootstrap work budget exceeded"),
+            )
+        }
+        draws += required;
+    }
+    for value in report.reports {
+        let expected = analyze_with(value.samples, value.options, control)?;
+        if !summaries_agree(value.statistics, expected) {
+            return Result::Err(
+                error(ErrorKind::Data, "report statistics disagree with raw samples: " + value.name),
+            )
+        }
+    }
+    check_context(control)?;
+    Result::Ok(())
+}
+
+pub fn validate_report_strict(report: SuiteReport, max_bootstrap_draws: u64) -> Result[(), Error] {
+    validate_report_strict_with(report, max_bootstrap_draws, context::Context::background())
+}

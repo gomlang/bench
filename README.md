@@ -159,3 +159,23 @@ goml verify --timeout 300s
 ```
 
 `goml verify` builds and tests the fixture against an isolated registry snapshot. `(cd ../verification && just ecosystem-test bench)` also runs the library-specific smoke and compatibility checks.
+
+## Recomputing imported statistics
+
+`validate_report_strict(report, max_bootstrap_draws)` adds reproducibility checks
+to ordinary structural validation. It reruns `analyze` from each report's raw
+samples and recorded options/seed, checking every stored statistic including the
+bootstrap interval, standard deviation, MAD, slope and both outlier counts.
+Float comparisons permit relative roundoff of `1e-12`; outlier counts are exact.
+A mismatch returns `ErrorKind::Data`. Existing import/export functions retain
+their inexpensive necessary-consistency checks; call strict validation after
+`from_json` when a recomputed summary is required.
+
+The explicit draw budget is shared across the entire suite, capped at 20 million.
+All `sample_count * bootstrap_resamples` costs are preflighted before any
+resampling, so several individually valid reports cannot reset the work budget.
+Zero budget accepts an empty suite only. `_with(report, budget, context)` supports
+cancellation using the same 32-resample polling as analysis, with checks before
+validation, during suite preflight and after analysis. Sorting remains bounded
+but cannot be interrupted midway. This checks arithmetic reproducibility, not
+the authenticity of raw timings, workload identity or benchmark environment.
