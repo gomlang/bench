@@ -5,6 +5,7 @@ use std::math;
 use std::fs;
 use std::os::linux::fd;
 use std::io::{Read, Close};
+use std::num::{ToFloat};
 
 fn valid_identity(report: Report) -> bool {
     report.group != "" && report.name != "" && report.group.to_bytes().len() <= 4096
@@ -84,6 +85,37 @@ pub fn validate_report(report: SuiteReport) -> Result[(), Error] {
             return Result::Err(error(ErrorKind::Data, "report iteration totals disagree"))
         }
         validate_statistics(value.statistics)?;
+        let statistics = value.statistics;
+        if statistics.mild_outliers > value.samples.len()
+            || statistics.severe_outliers > value.samples.len() - statistics.mild_outliers {
+            return Result::Err(error(ErrorKind::Data, "report outlier counts exceed samples"))
+        }
+        let mut minimum = value.samples[0].elapsed_ns.to_f64()
+            / value.samples[0].iterations.to_f64();
+        let mut maximum = minimum;
+        for sample in value.samples {
+            let duration = sample.elapsed_ns.to_f64() / sample.iterations.to_f64();
+            if duration < minimum {
+                minimum = duration;
+            }
+            if duration > maximum {
+                maximum = duration;
+            }
+        }
+        if statistics.min != minimum || statistics.max != maximum {
+            return Result::Err(error(ErrorKind::Data, "report extrema disagree with samples"))
+        }
+        for estimate in[
+            statistics.mean.lower,
+            statistics.mean.estimate,
+            statistics.mean.upper,
+            statistics.median,
+            statistics.slope_ns,
+        ] {
+            if estimate < minimum - maximum * 1e-12 || estimate > maximum + maximum * 1e-12 {
+                return Result::Err(error(ErrorKind::Data, "report estimate outside sample bounds"))
+            }
+        }
         match value.throughput {
             Bytes(0) | Elements(0) => return Result::Err(
                 error(ErrorKind::Data, "zero report throughput"),
