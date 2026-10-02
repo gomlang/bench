@@ -42,3 +42,35 @@ fn real_algorithms_and_versioned_statistical_api() -> () {
     let encoded = testing::expect_ok(bench::to_json(suite), "JSON");
     testing::assert_eq(testing::expect_ok(bench::from_json(encoded), "decode").reports.len(), 1);
 }
+
+#[test]
+fn published_report_validation_rejects_impossible_sample_summary() -> () {
+    let now: Ref[i64] = Ref::new(0);
+    let report = testing::expect_ok(
+        bench::run_with(
+            bench::Case::new(
+                "fixed",
+                || {
+                    now.set(now.get() + 10);
+                    1
+                },
+            ),
+            bench::Options {
+                warmup_ns: 0,
+                measurement_ns: 100,
+                samples: 2,
+                bootstrap_resamples: 20,
+                ..bench::Options::standard(),
+            },
+            bench::Clock::new(|| now.get()),
+            context::Context::background(),
+        ),
+        "run",
+    );
+    let statistics = bench::Statistics { severe_outliers: 3, ..report.statistics };
+    let suite = bench::SuiteReport {
+        schema: 1,
+        reports: Vec::from_array([bench::Report { statistics, ..report }]),
+    };
+    testing::assert(bench::validate_report(suite).is_err());
+}

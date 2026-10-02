@@ -1,0 +1,64 @@
+package tests;
+
+use ecosystem::bench;
+use std::json;
+use std::testing;
+
+#[test]
+fn imported_statistics_reject_extrema_estimates_and_outlier_counts_inconsistent_with_samples() -> () {
+    let baseline = report(Vec::from_array([10, 20, 30, 40]));
+    let original = baseline.statistics;
+    let invalid = Vec::from_array(
+        [
+            bench::Statistics { min: 9.0, ..original },
+            bench::Statistics { max: 41.0, ..original },
+            bench::Statistics { mild_outliers: 3, severe_outliers: 2, ..original },
+            bench::Statistics { mild_outliers: 9223372036854775807, ..original },
+            bench::Statistics {
+                mean: bench::Interval { estimate: 400.0, ..original.mean },
+                ..original,
+            },
+            bench::Statistics { mean: bench::Interval { lower: 1.0, ..original.mean }, ..original },
+            bench::Statistics {
+                mean: bench::Interval { upper: 400.0, ..original.mean },
+                ..original,
+            },
+            bench::Statistics { slope_ns: 400.0, ..original },
+        ],
+    );
+    for statistics in invalid {
+        let suite = bench::SuiteReport {
+            schema: 1,
+            reports: Vec::from_array([bench::Report { statistics, ..baseline }]),
+        };
+        testing::assert(bench::validate_report(suite).is_err());
+        testing::assert(bench::to_json(suite).is_err());
+        testing::assert(bench::to_html(suite).is_err());
+        let unchecked = testing::expect_ok(json::try_to_string(suite), "unchecked JSON");
+        testing::assert(bench::from_json(unchecked).is_err());
+    }
+}
+
+#[test]
+fn valid_report_checks_allow_floating_roundoff_without_requiring_interval_to_contain_mean() -> () {
+    let baseline = report(Vec::from_array([10, 20, 30, 40]));
+    let statistics = bench::Statistics {
+        mean: bench::Interval { lower: 10.0, estimate: 25.0, upper: 20.0 },
+        ..baseline.statistics,
+    };
+    let suite = bench::SuiteReport {
+        schema: 1,
+        reports: Vec::from_array([bench::Report { statistics, ..baseline }]),
+    };
+    testing::assert_ok(bench::validate_report(suite));
+    let constant = report(Vec::from_array([10, 10, 10, 10]));
+    let statistics = bench::Statistics { slope_ns: 10.000000000000002, ..constant.statistics };
+    testing::assert_ok(
+        bench::validate_report(
+            bench::SuiteReport {
+                schema: 1,
+                reports: Vec::from_array([bench::Report { statistics, ..constant }]),
+            },
+        ),
+    );
+}
