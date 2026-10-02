@@ -1,0 +1,99 @@
+package tests;
+
+use ecosystem::bench;
+use std::context;
+use std::testing;
+
+#[test]
+fn strict_validation_recomputes_summaries_that_pass_basic_bounds() -> () {
+    let original = report(Vec::from_array([10, 20, 30, 40]));
+    let statistics = original.statistics;
+    let valid = bench::SuiteReport { schema: 1, reports: Vec::from_array([original]) };
+    testing::assert_ok(bench::validate_report_strict(valid, 800));
+    let encoded = testing::expect_ok(bench::to_json(valid), "JSON");
+    testing::assert_ok(
+        bench::validate_report_strict(testing::expect_ok(bench::from_json(encoded), "import"), 800),
+    );
+    for changed in[
+        bench::Statistics {
+            mean: bench::Interval { estimate: 26.0, ..statistics.mean },
+            ..statistics,
+        },
+        bench::Statistics {
+            mean: bench::Interval { lower: 10.0, upper: 40.0, ..statistics.mean },
+            ..statistics,
+        },
+        bench::Statistics { median: 24.0, ..statistics },
+        bench::Statistics { standard_deviation: 1.0, ..statistics },
+        bench::Statistics { median_absolute_deviation: 1.0, ..statistics },
+        bench::Statistics { slope_ns: 26.0, ..statistics },
+        bench::Statistics { mild_outliers: 1, ..statistics },
+        bench::Statistics { severe_outliers: 1, ..statistics },
+    ] {
+        let suite = bench::SuiteReport {
+            schema: 1,
+            reports: Vec::from_array([bench::Report { statistics: changed, ..original }]),
+        };
+        testing::assert_ok(bench::validate_report(suite));
+        testing::assert_eq(
+            testing::expect_err(bench::validate_report_strict(suite, 800), "strict mismatch").kind,
+            bench::ErrorKind::Data,
+        );
+    }
+    let close = bench::Statistics {
+        mean: bench::Interval { estimate: 25.000000000000004, ..statistics.mean },
+        ..statistics,
+    };
+    testing::assert_ok(
+        bench::validate_report_strict(
+            bench::SuiteReport {
+                schema: 1,
+                reports: Vec::from_array([bench::Report { statistics: close, ..original }]),
+            },
+            800,
+        ),
+    );
+}
+
+#[test]
+fn strict_validation_preflights_one_suite_budget_and_honors_cancellation() -> () {
+    let first = report(Vec::from_array([10, 20, 30, 40]));
+    let second = bench::Report { name: "second", ..first };
+    let suite = bench::SuiteReport { schema: 1, reports: Vec::from_array([first, second]) };
+    testing::assert_eq(
+        testing::expect_err(bench::validate_report_strict(suite, 1599), "combined budget").kind,
+        bench::ErrorKind::Limit,
+    );
+    testing::assert_ok(bench::validate_report_strict(suite, 1600));
+    testing::assert(bench::validate_report_strict(suite, 20000001).is_err());
+    let corrupt = bench::Report {
+        statistics: bench::Statistics { median: 11.0, ..first.statistics },
+        ..first,
+    };
+    testing::assert_eq(
+        testing::expect_err(
+            bench::validate_report_strict(
+                bench::SuiteReport { schema: 1, reports: Vec::from_array([corrupt, second]) },
+                1599,
+            ),
+            "budget before resampling",
+        ).kind,
+        bench::ErrorKind::Limit,
+    );
+    testing::assert_ok(
+        bench::validate_report_strict(bench::SuiteReport { schema: 1, reports: Vec::new() }, 0),
+    );
+    context::with_cancel(
+        context::Context::background(),
+        |control, cancel| {
+            cancel.cancel();
+            testing::assert_eq(
+                testing::expect_err(
+                    bench::validate_report_strict_with(suite, 1600, control),
+                    "cancelled",
+                ).kind,
+                bench::ErrorKind::Cancelled,
+            );
+        },
+    );
+}
