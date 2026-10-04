@@ -99,8 +99,20 @@ hardware, operating-system load and dataset semantics across runs.
 
 `to_json`/`from_json` preserve schema version 1, identity, timing model, throughput,
 raw samples, summary statistics, options, iteration totals, wall time and result
-checksum. Readers validate schema, shapes, finite statistics and totals. Stored extrema must equal the raw per-iteration extrema; means, intervals, medians and slopes must lie within those extrema (allowing relative roundoff of `1e-12`), and combined outlier counts cannot exceed the sample count. Validation does not replay bootstrap analysis or prove that every summary was computed from the samples. Readers limit
-input/output JSON to 16 MiB. Parsing also limits nesting to 64 and structural tokens to one million. Unknown future schema versions are errors.
+checksum. Readers validate schema, shapes, finite statistics and totals. Stored
+extrema must equal the raw per-iteration extrema; means, intervals, medians and
+slopes must lie within those extrema (allowing relative roundoff of `1e-12`), and
+combined outlier counts cannot exceed the sample count. Validation does not replay
+bootstrap analysis or prove that every summary was computed from the samples.
+
+Calibration must account for at least the configured minimum iterations, including
+when warmup is disabled, and cannot exceed 64 maximum-sized batches. The reported
+wall time must respect its configured budget and contain all sample durations
+plus at least the requested warmup duration (one nanosecond for calibration when
+warmup is zero). These duration checks avoid overflowing accumulated totals.
+
+Readers limit input/output JSON to 16 MiB. Parsing also limits nesting to 64 and
+structural tokens to one million. Unknown future schema versions are errors.
 
 `to_html` produces a standalone UTF-8 HTML table, confidence intervals, throughput,
 outlier counts and an expandable raw JSON section. User-controlled names and

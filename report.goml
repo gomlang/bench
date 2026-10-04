@@ -57,6 +57,17 @@ pub fn validate_report(report: SuiteReport) -> Result[(), Error] {
             || value.samples.len() > 10000 {
             return Result::Err(error(ErrorKind::Data, "invalid benchmark report"))
         }
+        let calibration_ns = if value.options.warmup_ns > 0 {
+            value.options.warmup_ns
+        } else {
+            1
+        };
+        if value.warmup_iterations < value.options.min_iterations
+            || value.warmup_iterations > 64 * value.options.max_iterations
+            || value.elapsed_wall_ns > value.options.max_wall_ns
+            || value.elapsed_wall_ns < calibration_ns {
+            return Result::Err(error(ErrorKind::Data, "invalid calibration or wall-clock bounds"))
+        }
         samples += value.samples.len();
         if samples > 100000 {
             return Result::Err(error(ErrorKind::Limit, "report sample count exceeds limit"))
@@ -70,6 +81,9 @@ pub fn validate_report(report: SuiteReport) -> Result[(), Error] {
         }
         names.insert(name, true);
         let mut iterations = value.warmup_iterations;
+        // Calibration and every measured sample occupy disjoint intervals
+        // inside the run. Subtract their durations to avoid overflowing a sum.
+        let mut remaining_wall_ns = value.elapsed_wall_ns - calibration_ns;
         for sample in value.samples {
             if sample.elapsed_ns <= 0 || sample.iterations < value.options.min_iterations
                 || sample.iterations > value.options.max_iterations
@@ -80,6 +94,12 @@ pub fn validate_report(report: SuiteReport) -> Result[(), Error] {
                 )
             }
             iterations += sample.iterations;
+            if sample.elapsed_ns > remaining_wall_ns {
+                return Result::Err(
+                    error(ErrorKind::Data, "sample durations exceed report wall time"),
+                )
+            }
+            remaining_wall_ns -= sample.elapsed_ns;
         }
         if iterations != value.total_iterations {
             return Result::Err(error(ErrorKind::Data, "report iteration totals disagree"))

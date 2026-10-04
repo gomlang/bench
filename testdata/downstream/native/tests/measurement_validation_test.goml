@@ -1,0 +1,111 @@
+package tests;
+
+use ecosystem::bench;
+use std::context;
+use std::json;
+use std::testing;
+
+fn measured_report() -> bench::Report {
+    let now: Ref[i64] = Ref::new(0);
+    testing::expect_ok(
+        bench::run_with(
+            bench::Case::new(
+                "validation",
+                || {
+                    now.set(now.get() + 10);
+                    1
+                },
+            ),
+            bench::Options {
+                warmup_ns: 0,
+                measurement_ns: 100,
+                samples: 2,
+                min_iterations: 3,
+                max_iterations: 10,
+                max_total_iterations: 1000,
+                max_wall_ns: 1000,
+                bootstrap_resamples: 20,
+                ..bench::Options::standard(),
+            },
+            bench::Clock::new(|| now.get()),
+            context::Context::background(),
+        ),
+        "measured report",
+    )
+}
+
+#[test]
+fn imported_measurements_obey_calibration_and_wall_clock_bounds() -> () {
+    let original = measured_report();
+    let sampled = original.total_iterations - original.warmup_iterations;
+    let suite = bench::SuiteReport { schema: 1, reports: Vec::from_array([original]) };
+    testing::assert_eq(original.warmup_iterations, 3);
+    testing::assert_eq(original.elapsed_wall_ns, 130);
+    testing::assert_ok(bench::validate_report(suite));
+    let invalid = Vec::from_array(
+        [
+            bench::Report { warmup_iterations: 0, total_iterations: sampled, ..original },
+            bench::Report { warmup_iterations: 2, total_iterations: sampled + 2, ..original },
+            bench::Report { warmup_iterations: 641, total_iterations: sampled + 641, ..original },
+            bench::Report { elapsed_wall_ns: 0, ..original },
+            bench::Report { elapsed_wall_ns: 1001, ..original },
+            bench::Report { elapsed_wall_ns: 99, ..original },
+            bench::Report { elapsed_wall_ns: 100, ..original },
+            bench::Report {
+                options: bench::Options { warmup_ns: 31, ..original.options },
+                ..original,
+            },
+        ],
+    );
+    for value in invalid {
+        let report = bench::SuiteReport { schema: 1, reports: Vec::from_array([value]) };
+        testing::assert_eq(
+            testing::expect_err(bench::validate_report(report), "invalid measurement").kind,
+            bench::ErrorKind::Data,
+        );
+        testing::assert_err(bench::to_json(report));
+        testing::assert_err(bench::to_html(report));
+        testing::assert_err(bench::validate_report_strict(report, 40));
+        let encoded = testing::expect_ok(json::try_to_string(report), "unchecked JSON");
+        testing::assert_err(bench::from_json(encoded));
+    }
+    let exact_budget = bench::Report {
+        options: bench::Options { max_wall_ns: 130, ..original.options },
+        ..original,
+    };
+    testing::assert_ok(
+        bench::validate_report(
+            bench::SuiteReport { schema: 1, reports: Vec::from_array([exact_budget]) },
+        ),
+    );
+}
+
+#[test]
+fn report_duration_accumulation_rejects_overflow() -> () {
+    let original = measured_report();
+    let samples = Vec::from_array(
+        [
+            bench::Sample { iterations: 3, elapsed_ns: 4611686018427387904 },
+            bench::Sample { iterations: 3, elapsed_ns: 4611686018427387904 },
+        ],
+    );
+    let options = bench::Options { max_wall_ns: 9223372036854775807, ..original.options };
+    let statistics = testing::expect_ok(bench::analyze(samples, options), "large durations");
+    let value = bench::Report {
+        samples,
+        options,
+        statistics,
+        total_iterations: 9,
+        elapsed_wall_ns: 9223372036854775807,
+        ..original,
+    };
+    testing::assert_eq(
+        testing::expect_err(
+            bench::validate_report(
+                bench::SuiteReport { schema: 1, reports: Vec::from_array([value]) },
+            ),
+            "duration overflow",
+        ).kind,
+        bench::ErrorKind::Data,
+    );
+}
