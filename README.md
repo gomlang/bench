@@ -83,6 +83,10 @@ context. Statistics and comparisons have independent explicit work limits.
 
 `bootstrap_mean` is also available for independent positive finite observations.
 The same data, seed and configuration produce identical statistical results.
+Means use compensated sums with a power-of-two scale selected independently for
+each resample. This preserves subnormal observations and avoids overflowing sums
+of large finite values; percentile interpolation also scales subnormal endpoints
+before rounding. Analysis and baseline comparison use the same mean calculation.
 `throughput_per_second` converts mean iteration time into bytes/second or
 elements/second and rejects missing, zero or overflowing values.
 

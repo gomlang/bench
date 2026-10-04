@@ -1,0 +1,85 @@
+package tests;
+
+use ecosystem::bench;
+use std::testing;
+
+#[test]
+fn bootstrap_preserves_subnormal_means_and_percentiles() -> () {
+    // Expected binary64 bit patterns come from exact Python Fraction sums,
+    // round-to-even conversion, and percentile interpolation of the rounded
+    // resampled means. The PRNG is splitmix64-v1, with seed 17 and 100 resamples.
+    let cases: Vec[(Vec[u64], u64, u64, u64)] = Vec::from_array(
+        [
+            (Vec::from_array([1, 2]), 1, 2, 2),
+            (Vec::from_array([2, 1]), 1, 2, 2),
+            (Vec::from_array([1, 4]), 1, 2, 4),
+            (Vec::from_array([1, 1, 1, 4]), 1, 2, 3),
+            (Vec::from_array([1, 2, 4]), 1, 2, 3),
+            (Vec::from_array([1, 3, 7, 11]), 2, 6, 10),
+        ],
+    );
+    for entry in cases {
+        let values = Vec::new();
+        for bits in entry.0 {
+            values.push(float64_from_bits(bits));
+        }
+        let interval = testing::expect_ok(
+            bench::bootstrap_mean(values, 100, 0.95, 17),
+            "subnormal bootstrap",
+        );
+        testing::assert_eq(float64_to_bits(interval.lower), entry.1);
+        testing::assert_eq(float64_to_bits(interval.estimate), entry.2);
+        testing::assert_eq(float64_to_bits(interval.upper), entry.3);
+        let replay = testing::expect_ok(bench::bootstrap_mean(values, 100, 0.95, 17), "replay");
+        testing::assert_eq(interval.lower, replay.lower);
+        testing::assert_eq(interval.estimate, replay.estimate);
+        testing::assert_eq(interval.upper, replay.upper);
+    }
+    let interval = testing::expect_ok(
+        bench::bootstrap_mean(
+            Vec::from_array([float64_from_bits(1), float64_from_bits(2)]),
+            20,
+            0.51,
+            1,
+        ),
+        "subnormal percentile interpolation",
+    );
+    testing::assert_eq(float64_to_bits(interval.lower), 2);
+    testing::assert_eq(float64_to_bits(interval.upper), 2);
+}
+
+#[test]
+fn bootstrap_retains_tiny_resamples_and_finite_means_across_the_full_range() -> () {
+    let tiny = float64_from_bits(1);
+    let maximum = float64_from_bits(0x7fefffffffffffff);
+    let constant = testing::expect_ok(
+        bench::bootstrap_mean(
+            Vec::from_array([maximum, maximum, maximum, maximum, maximum]),
+            100,
+            0.95,
+            17,
+        ),
+        "finite maximum",
+    );
+    testing::assert_eq(constant.lower, maximum);
+    testing::assert_eq(constant.estimate, maximum);
+    testing::assert_eq(constant.upper, maximum);
+    let mixed = testing::expect_ok(
+        bench::bootstrap_mean(Vec::from_array([tiny, 1e308]), 100, 0.95, 17),
+        "full range",
+    );
+    testing::assert_eq(mixed.lower, tiny);
+    testing::assert_eq(mixed.estimate, 5e307);
+    testing::assert_eq(mixed.upper, 1e308);
+    let values = Vec::new();
+    for _ in 0..5000 {
+        values.push(tiny);
+        values.push(float64_from_bits(2));
+    }
+    let large = testing::expect_ok(
+        bench::bootstrap_mean(values, 20, 0.95, 17),
+        "many subnormal values",
+    );
+    testing::assert_eq(float64_to_bits(large.estimate), 2);
+    testing::assert_eq(values[0], tiny);
+}

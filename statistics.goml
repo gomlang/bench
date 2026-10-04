@@ -27,15 +27,73 @@ fn quantile(values: Vec[f64], probability: f64) -> f64 {
     } else {
         lower
     };
-    values[lower] + (values[upper] - values[lower]) * (index - lower.to_f64())
+    let weight = index - lower.to_f64();
+    let minimum_normal = float64_from_bits(0x0010000000000000);
+    if values[lower] > -minimum_normal && values[upper] < minimum_normal {
+        // Preserve fractional subnormal steps until the final rounding.
+        let scale = 4503599627370496.0;
+        let left = values[lower] * scale;
+        let right = values[upper] * scale;
+        (left + (right - left) * weight) / scale
+    } else {
+        values[lower] + (values[upper] - values[lower]) * weight
+    }
+}
+
+struct MeanSum {
+    scale: f64,
+    total: f64,
+    correction: f64,
+}
+
+impl MeanSum {
+    fn zero() -> MeanSum {
+        MeanSum { scale: float64_from_bits(0x0010000000000000), total: 0.0, correction: 0.0 }
+    }
+
+    fn add(self: MeanSum, value: f64) -> MeanSum {
+        // Power-of-two scaling preserves binary digits, including subnormal
+        // observations, while keeping each normalized value below two.
+        let candidate = float64_from_bits(float64_to_bits(value) & 0x7ff0000000000000);
+        let mut scale = self.scale;
+        let mut total = self.total;
+        let mut correction = self.correction;
+        if candidate > scale {
+            let factor = scale / candidate;
+            total *= factor;
+            correction *= factor;
+            scale = candidate;
+        }
+        let normalized = value / scale;
+        let next = total + normalized;
+        let rounding = if total >= normalized {
+            (total - next) + normalized
+        } else {
+            (normalized - next) + total
+        };
+        MeanSum { scale, total: next, correction: correction + rounding }
+    }
+
+    fn finish(self: MeanSum, count: isize) -> f64 {
+        (self.total / count.to_f64() + self.correction / count.to_f64()) * self.scale
+    }
 }
 
 fn mean(values: Vec[f64]) -> f64 {
-    let mut result = 0.0;
-    for index in 0..values.len() {
-        result += (values[index] - result) / (index + 1).to_f64();
+    let mut result = MeanSum::zero();
+    for value in values {
+        result = result.add(value);
     }
-    result
+    result.finish(values.len())
+}
+
+fn resampled_mean(values: Vec[f64], state: Ref[u64]) -> f64 {
+    let mut result = MeanSum::zero();
+    for _ in 0..values.len() {
+        state.set(rand::next_u64(state.get()));
+        result = result.add(values[(state.get() % values.len().to_u64()).to_isize()]);
+    }
+    result.finish(values.len())
 }
 
 pub fn bootstrap_mean_with(
@@ -57,20 +115,14 @@ pub fn bootstrap_mean_with(
             return Result::Err(error(ErrorKind::Data, "samples must be positive finite values"))
         }
     }
-    let mut state = seed;
+    let state = Ref::new(seed);
     let means = Vec::with_capacity(resamples);
     check_context(control)?;
     for resample in 0..resamples {
         if resample % 32 == 0 {
             check_context(control)?;
         }
-        let mut current = 0.0;
-        for index in 0..values.len() {
-            state = rand::next_u64(state);
-            let value = values[(state % values.len().to_u64()).to_isize()];
-            current += (value - current) / (index + 1).to_f64();
-        }
-        means.push(current);
+        means.push(resampled_mean(values, state));
     }
     let ordered = sorted(means);
     let tail = (1.0 - confidence) / 2.0;

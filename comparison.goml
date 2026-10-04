@@ -1,6 +1,5 @@
 package bench;
 
-use std::rand;
 use std::context;
 use std::num::{ToFloat};
 use std::serde::{Serialize, Deserialize};
@@ -33,16 +32,6 @@ fn sample_values(samples: Vec[Sample]) -> Result[Vec[f64], Error] {
         result.push(sample.elapsed_ns.to_f64() / sample.iterations.to_f64());
     }
     Result::Ok(result)
-}
-
-fn resampled_mean(values: Vec[f64], state: Ref[u64]) -> f64 {
-    let mut result = 0.0;
-    for index in 0..values.len() {
-        state.set(rand::next_u64(state.get()));
-        let value = values[(state.get() % values.len().to_u64()).to_isize()];
-        result += (value - result) / (index + 1).to_f64();
-    }
-    result
 }
 
 pub fn compare_with(baseline: Report, current: Report, control: context::Context) -> Result[
