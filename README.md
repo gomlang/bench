@@ -158,7 +158,7 @@ black-box correctness. Tests do not assert absolute machine performance.
 
 The native downstream fixture in `testdata/downstream/native` measures
 insertion sort and standard sorting for 32/128-element inputs, and writes
-`_artifact/bench-report.json` and `.html`. Run `(cd ../verification && just ecosystem-test bench)` from the
+`_artifact/bench-report.json` and `.html`. Run `(cd ../workflows && just ecosystem-test bench)` from the
 repository root for the isolated registry downstream workflow.
 
 Design references: [Criterion analysis](https://bheisler.github.io/criterion.rs/book/analysis.html),
@@ -167,14 +167,14 @@ and [Go KeepAlive](https://pkg.go.dev/runtime#KeepAlive).
 
 ## Development and downstream checks
 
-Requires the [current GoML toolchain](https://github.com/gomlang/verification/blob/main/ci/toolchain.json) with unversioned registry support. The independent native fixture is in `testdata/downstream/native/`; it retains a separate manifest and Go module for native dependencies. From the library root, run:
+Requires the [current GoML toolchain](https://github.com/gomlang/workflows/blob/main/ci/toolchain.json) with unversioned registry support. The independent native fixture is in `testdata/downstream/native/`; it retains a separate manifest and Go module for native dependencies. From the library root, run:
 
 ```sh
 goml test
-(cd ../verification && just ecosystem-test bench)
+(cd ../workflows && just ecosystem-test bench)
 ```
 
-The ecosystem verifier builds and tests the fixture against an isolated registry snapshot. `(cd ../verification && just ecosystem-test bench)` also runs the library-specific smoke and compatibility checks.
+The ecosystem verifier builds and tests the fixture against an isolated registry snapshot. `(cd ../workflows && just ecosystem-test bench)` also runs the library-specific smoke and compatibility checks.
 
 ## Recomputing imported statistics
 
