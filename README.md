@@ -144,10 +144,10 @@ compatibility with Rust's `std::hint::black_box`.
 ## Validation and example
 
 ```sh
-../../goml-dev/stage2/bin/goml fmt --check
-../../goml-dev/stage2/bin/goml check
-../../goml-dev/stage2/bin/goml test
-GOFLAGS=-race ../../goml-dev/stage2/bin/goml test --target-dir _artifact/race
+goml fmt --check
+goml check
+goml test
+GOFLAGS=-race goml test --target-dir _artifact/race
 ```
 
 Native tests use fixed statistical data and injected clocks. They cover warmup
@@ -167,14 +167,14 @@ and [Go KeepAlive](https://pkg.go.dev/runtime#KeepAlive).
 
 ## Development and downstream checks
 
-Requires GoML 0.1.56 or newer. The independent native fixture is in `testdata/downstream/native/`; it retains a separate manifest and Go module for native dependencies. From the library root, run:
+Requires the [current GoML toolchain](https://github.com/gomlang/verification/blob/main/ci/toolchain.json) with unversioned registry support. The independent native fixture is in `testdata/downstream/native/`; it retains a separate manifest and Go module for native dependencies. From the library root, run:
 
 ```sh
 goml test
-goml verify --timeout 300s
+(cd ../verification && just ecosystem-test bench)
 ```
 
-`goml verify` builds and tests the fixture against an isolated registry snapshot. `(cd ../verification && just ecosystem-test bench)` also runs the library-specific smoke and compatibility checks.
+The ecosystem verifier builds and tests the fixture against an isolated registry snapshot. `(cd ../verification && just ecosystem-test bench)` also runs the library-specific smoke and compatibility checks.
 
 ## Recomputing imported statistics
 

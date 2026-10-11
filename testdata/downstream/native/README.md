@@ -15,5 +15,5 @@ setup closures and statistical/reporting APIs deterministically.
 Run `(cd ../../../../verification && just ecosystem-test bench)` from this fixture directory to construct the
 isolated registry. Use the reported `GOML_HOME` for direct `goml check`, `goml test`
 or `goml run` commands here. The Go manifest resolves only the small local atomic
-adapter; benchmark/statistical source is resolved through the versioned GoML
+adapter; benchmark/statistical source is resolved through the GoML
 registry.

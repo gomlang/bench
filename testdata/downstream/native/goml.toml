@@ -2,4 +2,4 @@
 path = "downstream::bench"
 
 [dependencies]
-"ecosystem::bench" = "0.1.0"
+"ecosystem::bench" = true
