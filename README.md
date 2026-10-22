@@ -195,3 +195,15 @@ cancellation using the same 32-resample polling as analysis, with checks before
 validation, during suite preflight and after analysis. Sorting remains bounded
 but cannot be interrupted midway. This checks arithmetic reproducibility, not
 the authenticity of raw timings, workload identity or benchmark environment.
+
+`compare_suite(baseline, current)` (or `compare_suite_with(..., context)`) validates
+both complete suites and matches the exact `(group, name, parameter)` tuple.
+Duplicate identities and invalid reports are errors. Results retain current-suite
+order, followed by removed cases in baseline order. Each `ComparedCase.result`
+is `Compared(Comparison)`, `Added`, `Removed`, or `Incompatible(reason)`; changing
+timing or throughput produces the latter. Invalid/zero-duration samples cannot
+produce misleading speedups. Matched cases use the existing seeded bootstrap,
+confidence and noise rules. Total bootstrap work is limited to 20 million sample
+visits across the suite, and cancellation is checked throughout comparisons.
+`comparison_json` emits schema 1 and `comparison_html` emits an escaped standalone
+comparison table, each bounded to 16 MiB.

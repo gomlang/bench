@@ -1,0 +1,149 @@
+package bench;
+
+use std::context;
+use std::json;
+use std::serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize)]
+pub enum CaseComparison {
+    Compared(Comparison),
+    Added,
+    Removed,
+    Incompatible(string),
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ComparedCase {
+    pub group: string,
+    pub name: string,
+    pub parameter: string,
+    pub result: CaseComparison,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SuiteComparison {
+    pub schema: isize,
+    pub cases: Vec[ComparedCase],
+}
+
+fn comparison_key(value: Report) -> string {
+    value.group.byte_len().to_string() + ":" + value.group + value.name.byte_len().to_string() + ":"
+        + value.name
+        + value.parameter
+}
+
+pub fn compare_suite_with(baseline: SuiteReport, current: SuiteReport, control: context::Context) -> Result[
+    SuiteComparison,
+    Error,
+] {
+    check_context(control)?;
+    validate_report(baseline)?;
+    validate_report(current)?;
+    let old: HashMap[string, Report] = HashMap::new();
+    let seen: HashMap[string, bool] = HashMap::new();
+    let cases = Vec::new();
+    for value in baseline.reports {
+        old.insert(comparison_key(value), value);
+    }
+    let mut work: u64 = 0;
+    for value in current.reports {
+        check_context(control)?;
+        let key = comparison_key(value);
+        seen.insert(key, true);
+        let result = match old.get(key) {
+            None => CaseComparison::Added,
+            Some(before) => {
+                if before.throughput != value.throughput || before.timing != value.timing {
+                    CaseComparison::Incompatible("timing model or throughput differs from baseline")
+                } else {
+                    let cost = (before.samples.len() + value.samples.len()).to_u64()
+                        * value.options.bootstrap_resamples.to_u64();
+                    if cost > 20000000 - work {
+                        return Result::Err(
+                            error(
+                                ErrorKind::Limit,
+                                "suite comparison bootstrap work budget exceeded",
+                            ),
+                        );
+                    }
+                    work += cost;
+                    CaseComparison::Compared(compare_with(before, value, control)?)
+                }
+            },
+        };
+        cases.push(
+            ComparedCase {
+                group: value.group,
+                name: value.name,
+                parameter: value.parameter,
+                result,
+            },
+        );
+    }
+    for value in baseline.reports {
+        if seen.get(comparison_key(value)).is_none() {
+            cases.push(
+                ComparedCase {
+                    group: value.group,
+                    name: value.name,
+                    parameter: value.parameter,
+                    result: CaseComparison::Removed,
+                },
+            );
+        }
+    }
+    Result::Ok(SuiteComparison { schema: 1, cases })
+}
+
+pub fn compare_suite(baseline: SuiteReport, current: SuiteReport) -> Result[SuiteComparison, Error] {
+    compare_suite_with(baseline, current, context::Context::background())
+}
+
+pub fn comparison_json(baseline: SuiteReport, current: SuiteReport) -> Result[string, Error] {
+    let value = compare_suite(baseline, current)?;
+    let encoded = json::try_to_string(value).map_err(|message| error(ErrorKind::Data, message))?;
+    if encoded.byte_len() > 16777216 {
+        return Result::Err(error(ErrorKind::Limit, "comparison JSON exceeds 16 MiB"));
+    }
+    Result::Ok(encoded)
+}
+
+pub fn comparison_html(baseline: SuiteReport, current: SuiteReport) -> Result[string, Error] {
+    let value = compare_suite(baseline, current)?;
+    let rows = Vec::new();
+    rows.push(
+        "<!doctype html><meta charset=\"utf-8\"><title>Benchmark comparison</title><table><thead><tr><th>Group</th><th>Name</th><th>Parameter</th><th>Change</th><th>Relative estimate</th></tr></thead><tbody>",
+    );
+    let mut size = rows[0].byte_len();
+    for item in value.cases {
+        let (status, estimate) = match item.result {
+            Added => ("added", ""),
+            Removed => ("removed", ""),
+            Incompatible(message) => ("incompatible: " + message, ""),
+            Compared(comparison) => (
+                match comparison.change {
+                    Improved => "improved",
+                    Regressed => "regressed",
+                    WithinNoise => "within noise",
+                    Inconclusive => "inconclusive",
+                },
+                comparison.relative_change.estimate.to_string(),
+            ),
+        };
+        let row = "<tr><td>" + escape_html(item.group) + "</td><td>" + escape_html(item.name)
+            + "</td><td>"
+            + escape_html(item.parameter)
+            + "</td><td>"
+            + escape_html(status)
+            + "</td><td>"
+            + escape_html(estimate)
+            + "</td></tr>";
+        size += row.byte_len();
+        if size > 16777184 {
+            return Result::Err(error(ErrorKind::Limit, "comparison HTML exceeds 16 MiB"));
+        }
+        rows.push(row);
+    }
+    rows.push("</tbody></table>");
+    Result::Ok(rows.join(""))
+}

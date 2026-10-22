@@ -1,0 +1,91 @@
+package tests;
+
+use ecosystem::bench;
+use std::testing;
+use std::json;
+use std::context;
+
+#[test]
+fn suites_match_tuple_identity_and_report_added_removed_incompatible() -> () {
+    let base = report(Vec::from_array([10, 10, 10, 10]));
+    let removed = bench::Report { name: "removed", ..base };
+    let incompatible = bench::Report { name: "timing", ..base };
+    let before = bench::SuiteReport {
+        schema: 1,
+        reports: Vec::from_array([base, removed, incompatible]),
+    };
+    let after = bench::SuiteReport {
+        schema: 1,
+        reports: Vec::from_array(
+            [
+                bench::Report { name: "<new>", ..base },
+                bench::Report { timing: bench::Timing::PerIteration, ..incompatible },
+                base,
+            ],
+        ),
+    };
+    let value = must(bench::compare_suite(before, after));
+    testing::assert_eq(value.schema, 1);
+    testing::assert_eq(value.cases.len(), 4);
+    testing::assert(
+        match value.cases[0].result {
+            Added => true,
+            _ => false,
+        },
+    );
+    testing::assert(
+        match value.cases[1].result {
+            Incompatible(_) => true,
+            _ => false,
+        },
+    );
+    match value.cases[2].result {
+        bench::CaseComparison::Compared(comparison) => testing::assert_eq(
+            comparison.change,
+            bench::Change::WithinNoise,
+        ),
+        _ => testing::assert(false),
+    }
+    testing::assert_eq(value.cases[3].name, "removed");
+    testing::assert(
+        match value.cases[3].result {
+            Removed => true,
+            _ => false,
+        },
+    );
+    let encoded = must(bench::comparison_json(before, after));
+    testing::assert_ok(json::parse(encoded));
+    testing::assert_eq(encoded, must(bench::comparison_json(before, after)));
+    let html = must(bench::comparison_html(before, after));
+    testing::assert(html.contains("&lt;new&gt;"));
+    testing::assert(!html.contains("<new>"));
+}
+
+#[test]
+fn suites_reject_duplicates_invalid_samples_and_honor_cancellation() -> () {
+    let base = report(Vec::from_array([10, 10, 10, 10]));
+    let empty = bench::SuiteReport { schema: 1, reports: Vec::new() };
+    testing::assert_eq(must(bench::compare_suite(empty, empty)).cases.len(), 0);
+    let repeated = bench::SuiteReport { schema: 1, reports: Vec::from_array([base, base]) };
+    testing::assert_err(bench::compare_suite(repeated, empty));
+    testing::assert_err(bench::compare_suite(empty, repeated));
+    let invalid = bench::SuiteReport {
+        schema: 1,
+        reports: Vec::from_array(
+            [
+                bench::Report {
+                    samples: Vec::from_array([bench::Sample { iterations: 1, elapsed_ns: 0 }]),
+                    ..base,
+                },
+            ],
+        ),
+    };
+    testing::assert_err(bench::compare_suite(invalid, empty));
+    context::with_cancel(
+        context::Context::background(),
+        |ctx, cancel| {
+            cancel.cancel();
+            testing::assert_err(bench::compare_suite_with(empty, empty, ctx));
+        },
+    );
+}
